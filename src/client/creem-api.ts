@@ -6,11 +6,21 @@
 import type {
   CancelSubscriptionRequest,
   CreateCheckoutRequest,
+  CreateDiscountRequest,
+  CreateProductRequest,
+  UpdateSubscriptionRequest,
+  ValidateLicenseRequest,
+  ActivateLicenseRequest,
+  DeactivateLicenseRequest,
   CreemCheckout,
+  CreemCustomer,
+  CreemDiscount,
+  CreemLicense,
+  CreemProduct,
   CreemSubscription,
+  CreemTransaction,
   CustomerBillingResponse,
   PaginatedResponse,
-  CreemProduct,
 } from "../types.js";
 
 export interface CreemApiConfig {
@@ -107,6 +117,13 @@ export async function getProduct(
   });
 }
 
+export async function createProduct(
+  config: CreemApiConfig,
+  data: CreateProductRequest,
+): Promise<CreemProduct> {
+  return request<CreemProduct>(config, "POST", "/v1/products", data);
+}
+
 // ─── Subscriptions ───────────────────────────────────────────────────
 
 export async function getSubscription(
@@ -170,6 +187,47 @@ export async function upgradeSubscription(
   );
 }
 
+export async function updateSubscription(
+  config: CreemApiConfig,
+  subscriptionId: string,
+  data: UpdateSubscriptionRequest,
+): Promise<CreemSubscription> {
+  return request<CreemSubscription>(
+    config,
+    "POST",
+    `/v1/subscriptions/${subscriptionId}`,
+    data,
+  );
+}
+
+// ─── Customers ───────────────────────────────────────────────────────
+
+export async function getCustomer(
+  config: CreemApiConfig,
+  customerId: string,
+): Promise<CreemCustomer> {
+  return request<CreemCustomer>(config, "GET", "/v1/customers", undefined, {
+    id: customerId,
+  });
+}
+
+export async function listCustomers(
+  config: CreemApiConfig,
+  pageNumber = 1,
+  pageSize = 100,
+): Promise<PaginatedResponse<CreemCustomer>> {
+  return request<PaginatedResponse<CreemCustomer>>(
+    config,
+    "GET",
+    "/v1/customers/list",
+    undefined,
+    {
+      page_number: String(pageNumber),
+      page_size: String(pageSize),
+    },
+  );
+}
+
 // ─── Customer Billing ────────────────────────────────────────────────
 
 export async function generateCustomerBillingLink(
@@ -181,5 +239,94 @@ export async function generateCustomerBillingLink(
     "POST",
     "/v1/customers/billing",
     { customer_id: customerId },
+  );
+}
+
+// ─── Transactions ────────────────────────────────────────────────────
+
+export async function getTransaction(
+  config: CreemApiConfig,
+  transactionId: string,
+): Promise<CreemTransaction> {
+  return request<CreemTransaction>(
+    config,
+    "GET",
+    "/v1/transactions",
+    undefined,
+    { id: transactionId },
+  );
+}
+
+export async function listTransactions(
+  config: CreemApiConfig,
+  pageNumber = 1,
+  pageSize = 100,
+): Promise<PaginatedResponse<CreemTransaction>> {
+  return request<PaginatedResponse<CreemTransaction>>(
+    config,
+    "GET",
+    "/v1/transactions/search",
+    undefined,
+    {
+      page_number: String(pageNumber),
+      page_size: String(pageSize),
+    },
+  );
+}
+
+// ─── Licenses ────────────────────────────────────────────────────────
+
+export async function validateLicense(
+  config: CreemApiConfig,
+  data: ValidateLicenseRequest,
+): Promise<CreemLicense> {
+  return request<CreemLicense>(config, "POST", "/v1/licenses/validate", data);
+}
+
+export async function activateLicense(
+  config: CreemApiConfig,
+  data: ActivateLicenseRequest,
+): Promise<CreemLicense> {
+  return request<CreemLicense>(config, "POST", "/v1/licenses/activate", data);
+}
+
+export async function deactivateLicense(
+  config: CreemApiConfig,
+  data: DeactivateLicenseRequest,
+): Promise<CreemLicense> {
+  return request<CreemLicense>(
+    config,
+    "POST",
+    "/v1/licenses/deactivate",
+    data,
+  );
+}
+
+// ─── Discounts ───────────────────────────────────────────────────────
+
+export async function createDiscount(
+  config: CreemApiConfig,
+  data: CreateDiscountRequest,
+): Promise<CreemDiscount> {
+  return request<CreemDiscount>(config, "POST", "/v1/discounts", data);
+}
+
+export async function getDiscount(
+  config: CreemApiConfig,
+  discountId: string,
+): Promise<CreemDiscount> {
+  return request<CreemDiscount>(config, "GET", "/v1/discounts", undefined, {
+    id: discountId,
+  });
+}
+
+export async function deleteDiscount(
+  config: CreemApiConfig,
+  discountId: string,
+): Promise<void> {
+  return request<void>(
+    config,
+    "DELETE",
+    `/v1/discounts/${discountId}/delete`,
   );
 }

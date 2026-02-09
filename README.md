@@ -219,9 +219,30 @@ const upgrade = useAction(api.creem.upgradeCurrentSubscription);
 await upgrade({ productId: "prod_new_plan_id" });
 ```
 
-### Webhook event callbacks
+### Simplified access control (recommended)
 
-All webhook events are automatically synced to your Convex database. Use callbacks for custom logic:
+Use the high-level `onGrantAccess` / `onRevokeAccess` callbacks for the most common use case — granting and revoking access:
+
+```ts
+creem.registerRoutes(http as any, {
+  onGrantAccess: async (ctx, { userId, productId, subscriptionId }) => {
+    // Fires on: checkout.completed, subscription.active, subscription.paid
+    if (userId) {
+      await ctx.runMutation(api.users.grantPremiumAccess, { userId, productId });
+    }
+  },
+  onRevokeAccess: async (ctx, { userId, subscriptionId, reason }) => {
+    // Fires on: subscription.canceled, subscription.expired
+    if (userId) {
+      await ctx.runMutation(api.users.revokePremiumAccess, { userId });
+    }
+  },
+});
+```
+
+### Granular webhook event callbacks
+
+For more control, use specific per-event callbacks. These can be combined with `onGrantAccess`/`onRevokeAccess`:
 
 ```ts
 creem.registerRoutes(http as any, {
@@ -242,6 +263,68 @@ creem.registerRoutes(http as any, {
     // Handle refunds
   },
 });
+```
+
+### License management
+
+Validate, activate, and deactivate license keys for software distribution:
+
+```ts
+const { validateLicense, activateLicense, deactivateLicense } = creem.api();
+
+// Validate a license key
+const result = await validateLicense({ key: "LIC-KEY-123" });
+
+// Activate on a device
+const activated = await activateLicense({
+  key: "LIC-KEY-123",
+  instanceName: "User's MacBook",
+});
+
+// Deactivate a device
+await deactivateLicense({
+  key: "LIC-KEY-123",
+  instanceId: "inst_abc",
+});
+```
+
+### Discount codes
+
+Create and manage promotional discounts:
+
+```ts
+const { createDiscount, getDiscount, deleteDiscount } = creem.api();
+
+// Create a 20% off discount
+await createDiscount({
+  code: "SAVE20",
+  type: "percentage",
+  amount: 20,
+  maxRedemptions: 100,
+});
+
+// Apply at checkout
+<CheckoutLink
+  creemApi={api.creem}
+  productId="prod_xxx"
+  discountCode="SAVE20"
+>
+  Get 20% Off
+</CheckoutLink>
+```
+
+### Transaction history
+
+Query payment transactions directly:
+
+```ts
+const { getTransaction, listTransactions } = creem.api();
+
+// Get a specific transaction
+const tx = await getTransaction({ transactionId: "tx_xxx" });
+
+// List all transactions
+const txList = await listTransactions({ pageNumber: 1, pageSize: 20 });
 ```
 
 ## API Reference
@@ -276,6 +359,8 @@ The `Creem` class accepts a configuration object:
 | `createCheckoutSession(ctx, args)` | Create a checkout and return the URL |
 | `cancelSubscription(ctx, opts?)` | Cancel the current user's subscription |
 | `upgradeSubscription(ctx, { productId })` | Upgrade to a different product |
+| `pauseSubscription(ctx)` | Pause the current user's subscription |
+| `resumeSubscription(ctx)` | Resume a paused subscription |
 | `generateCustomerPortalUrl(ctx)` | Get the customer portal URL |
 | `syncProducts(ctx)` | Sync all products from Creem |
 
@@ -287,9 +372,26 @@ The `Creem` class accepts a configuration object:
 | `generateCustomerPortalUrl` | Action | Get customer portal URL |
 | `cancelCurrentSubscription` | Action | Cancel current subscription |
 | `upgradeCurrentSubscription` | Action | Upgrade subscription |
+| `updateCurrentSubscription` | Action | Update subscription (units, metadata) |
+| `pauseCurrentSubscription` | Action | Pause current subscription |
+| `resumeCurrentSubscription` | Action | Resume paused subscription |
+| `createProduct` | Action | Create a new product via Creem API |
 | `getConfiguredProducts` | Query | Get products by configured keys |
 | `listAllProducts` | Query | List all synced products |
+| `getCurrentSubscription` | Query | Get active subscription for current user |
+| `listUserSubscriptions` | Query | List all subscriptions for current user |
+| `listUserOrders` | Query | List all orders for current user |
 | `syncProducts` | Action | Sync products from Creem API |
+| `validateLicense` | Action | Validate a license key |
+| `activateLicense` | Action | Activate a license on a device |
+| `deactivateLicense` | Action | Deactivate a license instance |
+| `createDiscount` | Action | Create a promotional discount code |
+| `getDiscount` | Action | Retrieve discount details |
+| `deleteDiscount` | Action | Delete a discount code |
+| `getTransaction` | Action | Get a transaction by ID |
+| `listTransactions` | Action | List payment transactions |
+| `getCustomerFromCreem` | Action | Retrieve customer from Creem API |
+| `listCustomersFromCreem` | Action | List all customers from Creem API |
 
 ### React Components
 

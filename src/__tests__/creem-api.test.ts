@@ -4,12 +4,24 @@ import {
   getCheckout,
   listAllProducts,
   getProduct,
+  createProduct,
   getSubscription,
   cancelSubscription,
   pauseSubscription,
   resumeSubscription,
   upgradeSubscription,
+  updateSubscription,
+  getCustomer,
+  listCustomers,
   generateCustomerBillingLink,
+  getTransaction,
+  listTransactions,
+  validateLicense,
+  activateLicense,
+  deactivateLicense,
+  createDiscount,
+  getDiscount,
+  deleteDiscount,
   type CreemApiConfig,
 } from "../client/creem-api.js";
 
@@ -254,6 +266,242 @@ describe("generateCustomerBillingLink", () => {
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(body.customer_id).toBe("cust_test");
+  });
+});
+
+describe("createProduct", () => {
+  it("should create a product", async () => {
+    const mockProduct = { id: "prod_new", name: "New Product", price: 2000 };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockProduct));
+
+    const result = await createProduct(mockConfig, {
+      name: "New Product",
+      price: 2000,
+      currency: "USD",
+      billing_type: "recurring",
+      billing_period: "every-month",
+    });
+
+    expect(result).toEqual(mockProduct);
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[0]).toContain("/v1/products");
+    expect(callArgs[1].method).toBe("POST");
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.name).toBe("New Product");
+    expect(body.billing_type).toBe("recurring");
+  });
+});
+
+describe("updateSubscription", () => {
+  it("should update a subscription", async () => {
+    const mockSub = { id: "sub_test", status: "active" };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockSub));
+
+    await updateSubscription(mockConfig, "sub_test", { units: 5 });
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[0]).toContain("/v1/subscriptions/sub_test");
+    expect(callArgs[1].method).toBe("POST");
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.units).toBe(5);
+  });
+});
+
+describe("getCustomer", () => {
+  it("should retrieve a customer", async () => {
+    const mockCust = { id: "cust_test", email: "test@example.com" };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockCust));
+
+    const result = await getCustomer(mockConfig, "cust_test");
+    expect(result).toEqual(mockCust);
+
+    const url = mockFetch.mock.calls[0][0];
+    expect(url).toContain("id=cust_test");
+  });
+});
+
+describe("listCustomers", () => {
+  it("should list customers with pagination", async () => {
+    const mockCustomers = {
+      items: [{ id: "cust_1", email: "a@example.com" }],
+      pagination: { total_records: 1, total_pages: 1, current_page: 1 },
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockCustomers));
+
+    const result = await listCustomers(mockConfig);
+    expect(result.items).toHaveLength(1);
+
+    const url = mockFetch.mock.calls[0][0];
+    expect(url).toContain("/v1/customers/list");
+  });
+});
+
+describe("getTransaction", () => {
+  it("should retrieve a transaction", async () => {
+    const mockTx = { id: "tx_test", amount: 1000, status: "completed" };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockTx));
+
+    const result = await getTransaction(mockConfig, "tx_test");
+    expect(result).toEqual(mockTx);
+
+    const url = mockFetch.mock.calls[0][0];
+    expect(url).toContain("id=tx_test");
+  });
+});
+
+describe("listTransactions", () => {
+  it("should list transactions with pagination", async () => {
+    const mockTxs = {
+      items: [{ id: "tx_1" }, { id: "tx_2" }],
+      pagination: { total_records: 2, total_pages: 1, current_page: 1 },
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockTxs));
+
+    const result = await listTransactions(mockConfig);
+    expect(result.items).toHaveLength(2);
+
+    const url = mockFetch.mock.calls[0][0];
+    expect(url).toContain("/v1/transactions/search");
+  });
+});
+
+describe("validateLicense", () => {
+  it("should validate a license key", async () => {
+    const mockLicense = { id: "lic_test", status: "active", key: "LIC-KEY-123" };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockLicense));
+
+    const result = await validateLicense(mockConfig, { key: "LIC-KEY-123" });
+    expect(result).toEqual(mockLicense);
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[0]).toContain("/v1/licenses/validate");
+    expect(callArgs[1].method).toBe("POST");
+  });
+
+  it("should validate with instance id", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockResponse({ id: "lic_test", status: "active" }),
+    );
+
+    await validateLicense(mockConfig, {
+      key: "LIC-KEY-123",
+      instance_id: "inst_abc",
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.key).toBe("LIC-KEY-123");
+    expect(body.instance_id).toBe("inst_abc");
+  });
+});
+
+describe("activateLicense", () => {
+  it("should activate a license key", async () => {
+    const mockLicense = {
+      id: "lic_test",
+      status: "active",
+      key: "LIC-KEY-123",
+      instance: { id: "inst_new", name: "My Device", status: "active" },
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockLicense));
+
+    const result = await activateLicense(mockConfig, {
+      key: "LIC-KEY-123",
+      instance_name: "My Device",
+    });
+    expect(result.instance?.id).toBe("inst_new");
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[0]).toContain("/v1/licenses/activate");
+  });
+});
+
+describe("deactivateLicense", () => {
+  it("should deactivate a license instance", async () => {
+    const mockLicense = { id: "lic_test", status: "active", activation: 0 };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockLicense));
+
+    const result = await deactivateLicense(mockConfig, {
+      key: "LIC-KEY-123",
+      instance_id: "inst_abc",
+    });
+    expect(result).toEqual(mockLicense);
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[0]).toContain("/v1/licenses/deactivate");
+    const body = JSON.parse(callArgs[1].body);
+    expect(body.key).toBe("LIC-KEY-123");
+    expect(body.instance_id).toBe("inst_abc");
+  });
+});
+
+describe("createDiscount", () => {
+  it("should create a percentage discount", async () => {
+    const mockDiscount = {
+      id: "disc_test",
+      code: "SAVE20",
+      type: "percentage",
+      amount: 20,
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockDiscount));
+
+    const result = await createDiscount(mockConfig, {
+      code: "SAVE20",
+      type: "percentage",
+      amount: 20,
+    });
+    expect(result).toEqual(mockDiscount);
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[0]).toContain("/v1/discounts");
+    expect(callArgs[1].method).toBe("POST");
+  });
+
+  it("should create a fixed amount discount", async () => {
+    const mockDiscount = {
+      id: "disc_test2",
+      code: "FLAT10",
+      type: "fixed",
+      amount: 1000,
+      currency: "USD",
+    };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockDiscount));
+
+    await createDiscount(mockConfig, {
+      code: "FLAT10",
+      type: "fixed",
+      amount: 1000,
+      currency: "USD",
+      max_redemptions: 100,
+    });
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.code).toBe("FLAT10");
+    expect(body.max_redemptions).toBe(100);
+  });
+});
+
+describe("getDiscount", () => {
+  it("should retrieve a discount", async () => {
+    const mockDiscount = { id: "disc_test", code: "SAVE20" };
+    mockFetch.mockResolvedValueOnce(mockResponse(mockDiscount));
+
+    const result = await getDiscount(mockConfig, "disc_test");
+    expect(result).toEqual(mockDiscount);
+
+    const url = mockFetch.mock.calls[0][0];
+    expect(url).toContain("id=disc_test");
+  });
+});
+
+describe("deleteDiscount", () => {
+  it("should delete a discount", async () => {
+    mockFetch.mockResolvedValueOnce(mockResponse(undefined));
+
+    await deleteDiscount(mockConfig, "disc_test");
+
+    const callArgs = mockFetch.mock.calls[0];
+    expect(callArgs[0]).toContain("/v1/discounts/disc_test/delete");
+    expect(callArgs[1].method).toBe("DELETE");
   });
 });
 

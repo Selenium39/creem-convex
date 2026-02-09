@@ -30,8 +30,20 @@ import {
   createCheckout,
   cancelSubscription as apiCancelSubscription,
   upgradeSubscription as apiUpgradeSubscription,
+  updateSubscription as apiUpdateSubscription,
   generateCustomerBillingLink,
   listAllProducts as apiListAllProducts,
+  createProduct as apiCreateProduct,
+  getCustomer as apiGetCustomer,
+  listCustomers as apiListCustomers,
+  getTransaction as apiGetTransaction,
+  listTransactions as apiListTransactions,
+  validateLicense as apiValidateLicense,
+  activateLicense as apiActivateLicense,
+  deactivateLicense as apiDeactivateLicense,
+  createDiscount as apiCreateDiscount,
+  getDiscount as apiGetDiscount,
+  deleteDiscount as apiDeleteDiscount,
   type CreemApiConfig,
 } from "./creem-api.js";
 import type {
@@ -41,7 +53,13 @@ import type {
   RefundCreatedEvent,
   DisputeCreatedEvent,
   CreateCheckoutRequest,
+  CreateProductRequest,
+  UpdateSubscriptionRequest,
   CancelSubscriptionRequest,
+  ValidateLicenseRequest,
+  ActivateLicenseRequest,
+  DeactivateLicenseRequest,
+  CreateDiscountRequest,
   CreemProduct,
   CreemCustomer,
 } from "../types.js";
@@ -315,6 +333,32 @@ export class Creem<
   }
 
   /**
+   * Pause the current user's subscription.
+   */
+  async pauseSubscription(ctx: RunActionCtx) {
+    const { userId } = await this.config.getUserInfo(ctx);
+    const subscription = await this.getCurrentSubscription(ctx, { userId });
+    if (!subscription) {
+      throw new Error("No active subscription found");
+    }
+    const { pauseSubscription: apiPause } = await import("./creem-api.js");
+    return apiPause(this.getApiConfig(), subscription.creemSubscriptionId);
+  }
+
+  /**
+   * Resume the current user's paused subscription.
+   */
+  async resumeSubscription(ctx: RunActionCtx) {
+    const { userId } = await this.config.getUserInfo(ctx);
+    const subscription = await this.getCurrentSubscription(ctx, { userId });
+    if (!subscription) {
+      throw new Error("No paused subscription found");
+    }
+    const { resumeSubscription: apiResume } = await import("./creem-api.js");
+    return apiResume(this.getApiConfig(), subscription.creemSubscriptionId);
+  }
+
+  /**
    * Generate a customer portal link for the current user.
    */
   async generateCustomerPortalUrl(ctx: RunActionCtx) {
@@ -479,6 +523,267 @@ export class Creem<
           await this.syncProducts(ctx);
         },
       }),
+
+      // ── Product Management ──────────────────────────────────────
+
+      createProduct: actionGeneric({
+        args: {
+          name: v.string(),
+          price: v.number(),
+          currency: v.string(),
+          billingType: v.union(v.literal("recurring"), v.literal("one-time")),
+          description: v.optional(v.string()),
+          billingPeriod: v.optional(v.string()),
+          taxMode: v.optional(
+            v.union(v.literal("inclusive"), v.literal("exclusive")),
+          ),
+          taxCategory: v.optional(v.string()),
+          imageUrl: v.optional(v.string()),
+          defaultSuccessUrl: v.optional(v.string()),
+        },
+        handler: async (ctx, args) => {
+          const data: CreateProductRequest = {
+            name: args.name,
+            price: args.price,
+            currency: args.currency as "USD" | "EUR" | "GBP",
+            billing_type: args.billingType as "recurring" | "one-time",
+            description: args.description ?? undefined,
+            billing_period: args.billingPeriod ?? undefined,
+            tax_mode: args.taxMode
+              ? (args.taxMode as "inclusive" | "exclusive")
+              : undefined,
+            tax_category: args.taxCategory ?? undefined,
+            image_url: args.imageUrl ?? undefined,
+            default_success_url: args.defaultSuccessUrl ?? undefined,
+          };
+          const product = await apiCreateProduct(this.getApiConfig(), data);
+
+          // Sync to component DB
+          await ctx.runMutation(this.component.lib.upsertProduct, {
+            creemProductId: product.id,
+            name: product.name,
+            description: product.description,
+            price: product.price,
+            currency: product.currency,
+            billingType: product.billing_type,
+            billingPeriod: product.billing_period ?? null,
+            status: product.status,
+            taxMode: product.tax_mode,
+            taxCategory:
+              typeof product.tax_category === "string"
+                ? product.tax_category
+                : undefined,
+            imageUrl: product.image_url,
+            createdAt: product.created_at,
+            updatedAt: product.updated_at,
+            mode: product.mode,
+          });
+
+          return { productId: product.id };
+        },
+      }),
+
+      // ── Subscription Management (extended) ─────────────────────
+
+      updateCurrentSubscription: actionGeneric({
+        args: {
+          units: v.optional(v.number()),
+          metadata: v.optional(v.record(v.string(), v.any())),
+        },
+        handler: async (ctx, args) => {
+          const { userId } = await this.config.getUserInfo(ctx);
+          const sub = await ctx.runQuery(
+            this.component.lib.getCurrentSubscription,
+            { userId },
+          );
+          if (!sub) {
+            throw new Error("No active subscription found");
+          }
+          const data: UpdateSubscriptionRequest = {
+            units: args.units ?? undefined,
+            metadata: args.metadata as Record<string, unknown> | undefined,
+          };
+          await apiUpdateSubscription(
+            this.getApiConfig(),
+            sub.creemSubscriptionId,
+            data,
+          );
+        },
+      }),
+
+      pauseCurrentSubscription: actionGeneric({
+        args: {},
+        handler: async (ctx) => {
+          await this.pauseSubscription(ctx);
+        },
+      }),
+
+      resumeCurrentSubscription: actionGeneric({
+        args: {},
+        handler: async (ctx) => {
+          await this.resumeSubscription(ctx);
+        },
+      }),
+
+      // ── Transaction Queries ────────────────────────────────────
+
+      getTransaction: actionGeneric({
+        args: { transactionId: v.string() },
+        handler: async (_ctx, args) => {
+          return apiGetTransaction(this.getApiConfig(), args.transactionId);
+        },
+      }),
+
+      listTransactions: actionGeneric({
+        args: {
+          pageNumber: v.optional(v.number()),
+          pageSize: v.optional(v.number()),
+        },
+        handler: async (_ctx, args) => {
+          return apiListTransactions(
+            this.getApiConfig(),
+            args.pageNumber ?? 1,
+            args.pageSize ?? 20,
+          );
+        },
+      }),
+
+      // ── License Management ─────────────────────────────────────
+
+      validateLicense: actionGeneric({
+        args: {
+          key: v.string(),
+          instanceId: v.optional(v.string()),
+        },
+        handler: async (_ctx, args) => {
+          const data: ValidateLicenseRequest = {
+            key: args.key,
+            instance_id: args.instanceId ?? undefined,
+          };
+          return apiValidateLicense(this.getApiConfig(), data);
+        },
+      }),
+
+      activateLicense: actionGeneric({
+        args: {
+          key: v.string(),
+          instanceName: v.optional(v.string()),
+        },
+        handler: async (_ctx, args) => {
+          const data: ActivateLicenseRequest = {
+            key: args.key,
+            instance_name: args.instanceName ?? undefined,
+          };
+          return apiActivateLicense(this.getApiConfig(), data);
+        },
+      }),
+
+      deactivateLicense: actionGeneric({
+        args: {
+          key: v.string(),
+          instanceId: v.string(),
+        },
+        handler: async (_ctx, args) => {
+          const data: DeactivateLicenseRequest = {
+            key: args.key,
+            instance_id: args.instanceId,
+          };
+          return apiDeactivateLicense(this.getApiConfig(), data);
+        },
+      }),
+
+      // ── Discount Management ────────────────────────────────────
+
+      createDiscount: actionGeneric({
+        args: {
+          code: v.string(),
+          type: v.union(v.literal("percentage"), v.literal("fixed")),
+          amount: v.number(),
+          currency: v.optional(v.string()),
+          productId: v.optional(v.string()),
+          maxRedemptions: v.optional(v.number()),
+          expiresAt: v.optional(v.string()),
+        },
+        handler: async (_ctx, args) => {
+          const data: CreateDiscountRequest = {
+            code: args.code,
+            type: args.type as "percentage" | "fixed",
+            amount: args.amount,
+            currency: args.currency ?? undefined,
+            product_id: args.productId ?? undefined,
+            max_redemptions: args.maxRedemptions ?? undefined,
+            expires_at: args.expiresAt ?? undefined,
+          };
+          return apiCreateDiscount(this.getApiConfig(), data);
+        },
+      }),
+
+      getDiscount: actionGeneric({
+        args: { discountId: v.string() },
+        handler: async (_ctx, args) => {
+          return apiGetDiscount(this.getApiConfig(), args.discountId);
+        },
+      }),
+
+      deleteDiscount: actionGeneric({
+        args: { discountId: v.string() },
+        handler: async (_ctx, args) => {
+          await apiDeleteDiscount(this.getApiConfig(), args.discountId);
+        },
+      }),
+
+      // ── Customer Queries ───────────────────────────────────────
+
+      getCustomerFromCreem: actionGeneric({
+        args: { customerId: v.string() },
+        handler: async (_ctx, args) => {
+          return apiGetCustomer(this.getApiConfig(), args.customerId);
+        },
+      }),
+
+      listCustomersFromCreem: actionGeneric({
+        args: {
+          pageNumber: v.optional(v.number()),
+          pageSize: v.optional(v.number()),
+        },
+        handler: async (_ctx, args) => {
+          return apiListCustomers(
+            this.getApiConfig(),
+            args.pageNumber ?? 1,
+            args.pageSize ?? 100,
+          );
+        },
+      }),
+
+      // ── Subscription Status Queries ────────────────────────────
+
+      getCurrentSubscription: queryGeneric({
+        args: {},
+        handler: async (ctx) => {
+          const { userId } = await this.config.getUserInfo(ctx);
+          return ctx.runQuery(this.component.lib.getCurrentSubscription, {
+            userId,
+          });
+        },
+      }),
+
+      listUserSubscriptions: queryGeneric({
+        args: {},
+        handler: async (ctx) => {
+          const { userId } = await this.config.getUserInfo(ctx);
+          return ctx.runQuery(this.component.lib.listUserSubscriptions, {
+            userId,
+          });
+        },
+      }),
+
+      listUserOrders: queryGeneric({
+        args: {},
+        handler: async (ctx) => {
+          const { userId } = await this.config.getUserInfo(ctx);
+          return ctx.runQuery(this.component.lib.listUserOrders, { userId });
+        },
+      }),
     };
   }
 
@@ -574,6 +879,45 @@ export class Creem<
       onDisputeCreated?: (
         ctx: RunMutationCtx,
         event: DisputeCreatedEvent,
+      ) => Promise<void>;
+
+      // ── High-Level Simplified Callbacks ──────────────────────
+
+      /**
+       * Called when access should be granted to the user.
+       * Fires on: checkout.completed, subscription.active, subscription.paid
+       *
+       * This is a simplified callback for the most common use case:
+       * granting the user access to your product.
+       */
+      onGrantAccess?: (
+        ctx: RunMutationCtx,
+        data: {
+          userId: string | undefined;
+          customerId: string;
+          productId: string;
+          subscriptionId?: string;
+          orderId?: string;
+          metadata?: Record<string, unknown>;
+        },
+      ) => Promise<void>;
+
+      /**
+       * Called when access should be revoked from the user.
+       * Fires on: subscription.canceled, subscription.expired
+       *
+       * This is a simplified callback for the most common use case:
+       * revoking the user's access to your product.
+       */
+      onRevokeAccess?: (
+        ctx: RunMutationCtx,
+        data: {
+          userId: string | undefined;
+          customerId: string;
+          productId: string;
+          subscriptionId: string;
+          reason: "canceled" | "expired";
+        },
       ) => Promise<void>;
     },
   ) {
@@ -757,6 +1101,19 @@ export class Creem<
           ctx,
           event as unknown as CheckoutCompletedEvent,
         );
+
+        // Fire high-level onGrantAccess callback
+        if (options?.onGrantAccess) {
+          await options.onGrantAccess(ctx, {
+            userId,
+            customerId: customer?.id,
+            productId: product?.id ?? order?.product,
+            subscriptionId: subscription?.id,
+            orderId: order?.id,
+            metadata,
+          });
+        }
+
         break;
       }
 
@@ -854,17 +1211,58 @@ export class Creem<
           mode: sub.mode,
         });
 
+        // Resolve userId from existing customer record
+        let resolvedUserId: string | undefined;
+        const existingCust = await ctx.runQuery(
+          this.component.lib.getCustomerByCreemId,
+          { creemCustomerId: customerId },
+        );
+        resolvedUserId =
+          existingCust?.userId ??
+          (sub.metadata?.userId as string | undefined) ??
+          undefined;
+
         // Dispatch to the appropriate callback
         const subEvent = event as unknown as SubscriptionEvent;
         switch (event.eventType) {
           case "subscription.active":
             await options?.onSubscriptionActive?.(ctx, subEvent);
+            // Fire onGrantAccess
+            if (options?.onGrantAccess) {
+              await options.onGrantAccess(ctx, {
+                userId: resolvedUserId,
+                customerId,
+                productId,
+                subscriptionId: sub.id,
+                metadata: sub.metadata,
+              });
+            }
             break;
           case "subscription.paid":
             await options?.onSubscriptionPaid?.(ctx, subEvent);
+            // Fire onGrantAccess (renewal confirms continued access)
+            if (options?.onGrantAccess) {
+              await options.onGrantAccess(ctx, {
+                userId: resolvedUserId,
+                customerId,
+                productId,
+                subscriptionId: sub.id,
+                metadata: sub.metadata,
+              });
+            }
             break;
           case "subscription.canceled":
             await options?.onSubscriptionCanceled?.(ctx, subEvent);
+            // Fire onRevokeAccess
+            if (options?.onRevokeAccess) {
+              await options.onRevokeAccess(ctx, {
+                userId: resolvedUserId,
+                customerId,
+                productId,
+                subscriptionId: sub.id,
+                reason: "canceled",
+              });
+            }
             break;
           case "subscription.scheduled_cancel":
             await options?.onSubscriptionScheduledCancel?.(ctx, subEvent);
@@ -874,6 +1272,16 @@ export class Creem<
             break;
           case "subscription.expired":
             await options?.onSubscriptionExpired?.(ctx, subEvent);
+            // Fire onRevokeAccess
+            if (options?.onRevokeAccess) {
+              await options.onRevokeAccess(ctx, {
+                userId: resolvedUserId,
+                customerId,
+                productId,
+                subscriptionId: sub.id,
+                reason: "expired",
+              });
+            }
             break;
           case "subscription.update":
             await options?.onSubscriptionUpdate?.(ctx, subEvent);

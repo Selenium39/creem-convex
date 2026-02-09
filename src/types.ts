@@ -268,6 +268,86 @@ export interface CreemLicense {
   };
 }
 
+// ─── Discount ────────────────────────────────────────────────────────
+
+export type DiscountType = "percentage" | "fixed";
+
+export interface CreemDiscount {
+  id: string;
+  mode?: CreemMode;
+  object?: string;
+  code: string;
+  type: DiscountType;
+  amount: number;
+  currency?: Currency;
+  product_id?: string;
+  max_redemptions?: number | null;
+  redemptions?: number;
+  expires_at?: string | null;
+  created_at: string;
+  updated_at?: string;
+  status?: string;
+}
+
+export interface CreateDiscountRequest {
+  code: string;
+  type: DiscountType;
+  amount: number;
+  currency?: Currency;
+  product_id?: string;
+  max_redemptions?: number;
+  expires_at?: string;
+}
+
+// ─── License Requests ────────────────────────────────────────────────
+
+export interface ValidateLicenseRequest {
+  key: string;
+  instance_id?: string;
+}
+
+export interface ActivateLicenseRequest {
+  key: string;
+  instance_name?: string;
+}
+
+export interface DeactivateLicenseRequest {
+  key: string;
+  instance_id: string;
+}
+
+// ─── Create Product ──────────────────────────────────────────────────
+
+export interface CreateProductRequest {
+  name: string;
+  description?: string;
+  price: number;
+  currency: Currency;
+  billing_type: BillingType;
+  billing_period?: BillingPeriod;
+  tax_mode?: TaxMode;
+  tax_category?: TaxCategory;
+  image_url?: string;
+  default_success_url?: string;
+}
+
+// ─── Update Subscription ─────────────────────────────────────────────
+
+export interface UpdateSubscriptionRequest {
+  units?: number;
+  metadata?: Record<string, unknown>;
+}
+
+// ─── Error Response ──────────────────────────────────────────────────
+
+export interface CreemApiError {
+  trace_id: string;
+  status: number;
+  error: string;
+  message: string[];
+  timestamp: number;
+}
+
 // ─── Webhook Events ──────────────────────────────────────────────────
 
 export type WebhookEventType =
