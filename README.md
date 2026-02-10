@@ -461,4 +461,4 @@ When ready for production, change to `CREEM_ENVIRONMENT=production` and use your
 
 ## License
 
-Apache-2.0
+MIT
