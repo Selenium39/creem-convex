@@ -2,6 +2,8 @@
 
 [![npm version](https://badge.fury.io/js/@creem_io%2Fconvex.svg)](https://badge.fury.io/js/@creem_io/convex)
 
+[中文](README.zh-CN.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Nederlands](README.nl.md) | [Polski](README.pl.md)
+
 Integrates [Creem](https://creem.io) payments, subscriptions, and billing into your [Convex](https://convex.dev) application.
 
 Creem is a Merchant of Record that handles global payments, tax compliance, and subscription management. This Convex component brings Creem's full payment stack into your Convex backend with real-time reactivity.
